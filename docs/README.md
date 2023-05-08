@@ -84,6 +84,10 @@ Simply pass the name of the template file to the --preset argument, for example,
 ``` shell
 python create_patches_fp.py --source DATA_DIRECTORY --save_dir RESULTS_DIRECTORY --patch_size 256 --preset bwh_biopsy.csv --seg --patch --stitch
 ```
+Or in case of the modified clam:
+``` shell
+python create_patches_fp.py --source DATA_DIRECTORY --primary_site Breast --num_slides 4 --random_seed 0 --save_dir RESULTS_DIRECTORY --patch_size 256 --preset bwh_biopsy.csv --seg --patch --stitch
+```
 ### Custom Default Segmentation Parameters
 For advanced usage, in addition to using the default, single set of parameters defined in the script **create_patches_fp.py**, the user can define custom templates of parameters depending on the dataset. These templates are expected to be stored under **presets**, and contain values for each of the parameters used during segmentation and patching. 
 

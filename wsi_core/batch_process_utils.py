@@ -21,8 +21,9 @@ def initialize_df(slides, seg_params, filter_params, vis_params, patch_params,
 	if isinstance(slides, pd.DataFrame):
 		slide_ids = slides.slide_id.values
 	else:
-		slide_ids = slides
-	default_df_dict = {'slide_id': slide_ids, 'process': np.full((total), 1, dtype=np.uint8)}
+		slide_ids = [slide.split("/")[0] for slide in slides]
+		slide_names = [slide.split("/")[-1] for slide in slides]
+	default_df_dict = {'slide_id': slide_ids, 'slide_name': slide_names, 'process': np.full((total), 1, dtype=np.uint8)}
 
 	# initiate empty labels in case not provided
 	if use_heatmap_args:

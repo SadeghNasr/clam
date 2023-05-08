@@ -1,20 +1,21 @@
-# internal imports
-from wsi_core.WholeSlideImage import WholeSlideImage
-from wsi_core.wsi_utils import StitchCoords
-from wsi_core.batch_process_utils import initialize_df
-# other imports
-import os
-import numpy as np
 import time
 import argparse
 import pdb
+import random
+from os import listdir, makedirs
+from os.path import join, isfile, splitext
+
+import numpy as np
 import pandas as pd
+
+from wsi_core.WholeSlideImage import WholeSlideImage
+from wsi_core.wsi_utils import StitchCoords
+from wsi_core.batch_process_utils import initialize_df
 
 def stitching(file_path, wsi_object, downscale = 64):
 	start = time.time()
 	heatmap = StitchCoords(file_path, wsi_object, downscale=downscale, bg_color=(0,0,0), alpha=-1, draw_grid=False)
 	total_time = time.time() - start
-	
 	return heatmap, total_time
 
 def segment(WSI_object, seg_params = None, filter_params = None, mask_file = None):
@@ -26,7 +27,6 @@ def segment(WSI_object, seg_params = None, filter_params = None, mask_file = Non
 	# Segment	
 	else:
 		WSI_object.segmentTissue(**seg_params, filter_params=filter_params)
-
 	### Stop Seg Timers
 	seg_time_elapsed = time.time() - start_time   
 	return WSI_object, seg_time_elapsed
@@ -34,17 +34,13 @@ def segment(WSI_object, seg_params = None, filter_params = None, mask_file = Non
 def patching(WSI_object, **kwargs):
 	### Start Patch Timer
 	start_time = time.time()
-
 	# Patch
 	file_path = WSI_object.process_contours(**kwargs)
-
-
 	### Stop Patch Timer
 	patch_time_elapsed = time.time() - start_time
 	return file_path, patch_time_elapsed
 
-
-def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_dir, 
+def seg_and_patch(source, primary_site, num_slides, random_seed, save_dir, patch_save_dir, mask_save_dir, stitch_save_dir, 
 				  patch_size = 256, step_size = 256, 
 				  seg_params = {'seg_level': -1, 'sthresh': 8, 'mthresh': 7, 'close': 4, 'use_otsu': False,
 				  'keep_ids': 'none', 'exclude_ids': 'none'},
@@ -57,17 +53,26 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 				  stitch= False, 
 				  patch = False, auto_skip=True, process_list = None):
 	
+	metadata = pd.read_csv(join(source, "minimal_metadata.csv"), low_memory=False)
+	metadata = metadata[metadata["primary_site"]==primary_site]
+	all_slides = metadata.apply(lambda x: join(x.id, x.filename), axis=1).reset_index(drop=True).tolist()
+	if random_seed:
+		random.seed(random_seed)
+	random.shuffle(all_slides)
+	if num_slides > len(all_slides):
+		print(f"There are only {len(all_slides)} available. `num_slides` changed from {num_slides} to {len(all_slides)}...")
+		num_slides = len(all_slides)
+	elif num_slides == -1:
+		num_slides = len(all_slides)
+	slides = sorted(all_slides[:num_slides])
+	slides = [slide for slide in slides if isfile(join(source, slide))]
 
-
-	slides = sorted(os.listdir(source))
-	slides = [slide for slide in slides if os.path.isfile(os.path.join(source, slide))]
 	if process_list is None:
 		df = initialize_df(slides, seg_params, filter_params, vis_params, patch_params)
-	
 	else:
 		df = pd.read_csv(process_list)
 		df = initialize_df(df, seg_params, filter_params, vis_params, patch_params)
-
+	
 	mask = df['process'] == 1
 	process_stack = df[mask]
 
@@ -87,22 +92,22 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 	stitch_times = 0.
 
 	for i in range(total):
-		df.to_csv(os.path.join(save_dir, 'process_list_autogen.csv'), index=False)
+		df.to_csv(join(save_dir, 'process_list_autogen.csv'), index=False)
 		idx = process_stack.index[i]
-		slide = process_stack.loc[idx, 'slide_id']
+		slide = join(process_stack.loc[idx, 'slide_id'], process_stack.loc[idx, 'slide_name'])
 		print("\n\nprogress: {:.2f}, {}/{}".format(i/total, i, total))
 		print('processing {}'.format(slide))
 		
 		df.loc[idx, 'process'] = 0
-		slide_id, _ = os.path.splitext(slide)
+		slide_id = slide.split("/")[-1].split(".svs")[0]
 
-		if auto_skip and os.path.isfile(os.path.join(patch_save_dir, slide_id + '.h5')):
+		if auto_skip and isfile(join(patch_save_dir, slide_id + '.h5')):
 			print('{} already exist in destination location, skipped'.format(slide_id))
 			df.loc[idx, 'status'] = 'already_exist'
 			continue
 
 		# Inialize WSI
-		full_path = os.path.join(source, slide)
+		full_path = join(source, slide)
 		WSI_object = WholeSlideImage(full_path)
 
 		if use_default_params:
@@ -189,7 +194,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 
 		if save_mask:
 			mask = WSI_object.visWSI(**current_vis_params)
-			mask_path = os.path.join(mask_save_dir, slide_id+'.jpg')
+			mask_path = join(mask_save_dir, slide_id+'.jpg')
 			mask.save(mask_path)
 
 		patch_time_elapsed = -1 # Default time
@@ -200,10 +205,10 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 		
 		stitch_time_elapsed = -1
 		if stitch:
-			file_path = os.path.join(patch_save_dir, slide_id+'.h5')
-			if os.path.isfile(file_path):
+			file_path = join(patch_save_dir, slide_id+'.h5')
+			if isfile(file_path):
 				heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, downscale=64)
-				stitch_path = os.path.join(stitch_save_dir, slide_id+'.jpg')
+				stitch_path = join(stitch_save_dir, slide_id+'.jpg')
 				heatmap.save(stitch_path)
 
 		print("segmentation took {} seconds".format(seg_time_elapsed))
@@ -219,7 +224,7 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 	patch_times /= total
 	stitch_times /= total
 
-	df.to_csv(os.path.join(save_dir, 'process_list_autogen.csv'), index=False)
+	df.to_csv(join(save_dir, 'process_list_autogen.csv'), index=False)
 	print("average segmentation time in s per slide: {}".format(seg_times))
 	print("average patching time in s per slide: {}".format(patch_times))
 	print("average stiching time in s per slide: {}".format(stitch_times))
@@ -229,6 +234,12 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 parser = argparse.ArgumentParser(description='seg and patch')
 parser.add_argument('--source', type = str,
 					help='path to folder containing raw wsi image files')
+parser.add_argument('--primary_site', type = str,
+					help='Brain, Breast, Bronchus and lung, or Colon')
+parser.add_argument('--num_slides', type = int, default=-1,
+					help='number of slides to be randomly selected from all slides available for the selected primary site. -1 for all slides.')
+parser.add_argument('--random_seed', type = int, default=None,
+					help='random seed for selection of num_slides from all slides')
 parser.add_argument('--step_size', type = int, default=256,
 					help='step_size')
 parser.add_argument('--patch_size', type = int, default=256,
@@ -249,13 +260,12 @@ parser.add_argument('--process_list',  type = str, default=None,
 if __name__ == '__main__':
 	args = parser.parse_args()
 
-	patch_save_dir = os.path.join(args.save_dir, 'patches')
-	mask_save_dir = os.path.join(args.save_dir, 'masks')
-	stitch_save_dir = os.path.join(args.save_dir, 'stitches')
+	patch_save_dir = join(args.save_dir, 'patches')
+	mask_save_dir = join(args.save_dir, 'masks')
+	stitch_save_dir = join(args.save_dir, 'stitches')
 
 	if args.process_list:
-		process_list = os.path.join(args.save_dir, args.process_list)
-
+		process_list = join(args.save_dir, args.process_list)
 	else:
 		process_list = None
 
@@ -273,25 +283,23 @@ if __name__ == '__main__':
 	for key, val in directories.items():
 		print("{} : {}".format(key, val))
 		if key not in ['source']:
-			os.makedirs(val, exist_ok=True)
+			makedirs(val, exist_ok=True)
 
 	seg_params = {'seg_level': -1, 'sthresh': 8, 'mthresh': 7, 'close': 4, 'use_otsu': False,
 				  'keep_ids': 'none', 'exclude_ids': 'none'}
 	filter_params = {'a_t':100, 'a_h': 16, 'max_n_holes':8}
 	vis_params = {'vis_level': -1, 'line_thickness': 250}
 	patch_params = {'use_padding': True, 'contour_fn': 'four_pt'}
-
+	dataset_params = {"primary_site": args.primary_site, "num_slides": args.num_slides, "random_seed":args.random_seed}
+ 
 	if args.preset:
-		preset_df = pd.read_csv(os.path.join('presets', args.preset))
+		preset_df = pd.read_csv(join('presets', args.preset))
 		for key in seg_params.keys():
 			seg_params[key] = preset_df.loc[0, key]
-
 		for key in filter_params.keys():
 			filter_params[key] = preset_df.loc[0, key]
-
 		for key in vis_params.keys():
 			vis_params[key] = preset_df.loc[0, key]
-
 		for key in patch_params.keys():
 			patch_params[key] = preset_df.loc[0, key]
 	
@@ -302,7 +310,7 @@ if __name__ == '__main__':
 
 	print(parameters)
 
-	seg_times, patch_times = seg_and_patch(**directories, **parameters,
+	seg_times, patch_times = seg_and_patch(**directories, **parameters, **dataset_params,
 											patch_size = args.patch_size, step_size=args.step_size, 
 											seg = args.seg,  use_default_params=False, save_mask = True, 
 											stitch= args.stitch,
