@@ -53,7 +53,7 @@ def seg_and_patch(source, primary_site, num_slides, random_seed, save_dir, patch
 				  stitch= False, 
 				  patch = False, auto_skip=True, process_list = None):
 	
-	metadata = pd.read_csv(join(source, "minimal_metadata.csv"), low_memory=False)
+	metadata = pd.read_csv(join(source, "metadata.csv"), low_memory=False)
 	metadata = metadata[metadata["primary_site"]==primary_site]
 	all_slides = metadata.apply(lambda x: join(x.id, x.filename), axis=1).reset_index(drop=True).tolist()
 	if random_seed:

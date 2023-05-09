@@ -15,7 +15,7 @@ import h5py
 from utils.utils import generate_split, nth
 
 def save_splits(split_datasets, column_keys, filename, boolean_style=False):
-	splits = [split_datasets[i].slide_data['slide_id'] for i in range(len(split_datasets))]
+	splits = [split_datasets[i].slide_data['file_name'] for i in range(len(split_datasets))]
 	if not boolean_style:
 		df = pd.concat(splits, ignore_index=True, axis=1)
 		df.columns = column_keys
@@ -123,6 +123,10 @@ class Generic_WSI_Classification_Dataset(Dataset):
 		return data
 
 	def filter_df(self, df, filter_dict={}):
+		"""
+		filter_dict={"col": "value"}
+		checks the column "col" in df and deletes all rows in df the their "col" value is not "value".
+		"""
 		if len(filter_dict) > 0:
 			filter_mask = np.full(len(df), True, bool)
 			# assert 'label' not in filter_dict.keys()
@@ -191,7 +195,7 @@ class Generic_WSI_Classification_Dataset(Dataset):
 		split = split.dropna().reset_index(drop=True)
 
 		if len(split) > 0:
-			mask = self.slide_data['slide_id'].isin(split.tolist())
+			mask = self.slide_data['file_name'].isin(split.tolist())
 			df_slice = self.slide_data[mask].reset_index(drop=True)
 			split = Generic_Split(df_slice, data_dir=self.data_dir, num_classes=self.num_classes)
 		else:
@@ -207,7 +211,7 @@ class Generic_WSI_Classification_Dataset(Dataset):
 			merged_split.extend(split)
 
 		if len(split) > 0:
-			mask = self.slide_data['slide_id'].isin(merged_split)
+			mask = self.slide_data['file_name'].isin(merged_split)
 			df_slice = self.slide_data[mask].reset_index(drop=True)
 			split = Generic_Split(df_slice, data_dir=self.data_dir, num_classes=self.num_classes)
 		else:
@@ -244,7 +248,7 @@ class Generic_WSI_Classification_Dataset(Dataset):
 		
 		else:
 			assert csv_path 
-			all_splits = pd.read_csv(csv_path, dtype=self.slide_data['slide_id'].dtype)  # Without "dtype=self.slide_data['slide_id'].dtype", read_csv() will convert all-number columns to a numerical type. Even if we convert numerical columns back to objects later, we may lose zero-padding in the process; the columns must be correctly read in from the get-go. When we compare the individual train/val/test columns to self.slide_data['slide_id'] in the get_split_from_df() method, we cannot compare objects (strings) to numbers or even to incorrectly zero-padded objects/strings. An example of this breaking is shown in https://github.com/andrew-weisman/clam_analysis/tree/main/datatype_comparison_bug-2021-12-01.
+			all_splits = pd.read_csv(csv_path, dtype=self.slide_data['file_name'].dtype)  # Without "dtype=self.slide_data['file_name'].dtype", read_csv() will convert all-number columns to a numerical type. Even if we convert numerical columns back to objects later, we may lose zero-padding in the process; the columns must be correctly read in from the get-go. When we compare the individual train/val/test columns to self.slide_data['file_name'] in the get_split_from_df() method, we cannot compare objects (strings) to numbers or even to incorrectly zero-padded objects/strings. An example of this breaking is shown in https://github.com/andrew-weisman/clam_analysis/tree/main/datatype_comparison_bug-2021-12-01.
 			train_split = self.get_split_from_df(all_splits, 'train')
 			val_split = self.get_split_from_df(all_splits, 'val')
 			test_split = self.get_split_from_df(all_splits, 'test')
@@ -252,7 +256,7 @@ class Generic_WSI_Classification_Dataset(Dataset):
 		return train_split, val_split, test_split
 
 	def get_list(self, ids):
-		return self.slide_data['slide_id'][ids]
+		return self.slide_data['file_name'][ids]
 
 	def getlabel(self, ids):
 		return self.slide_data['label'][ids]
@@ -326,7 +330,7 @@ class Generic_MIL_Dataset(Generic_WSI_Classification_Dataset):
 		self.use_h5 = toggle
 
 	def __getitem__(self, idx):
-		slide_id = self.slide_data['slide_id'][idx]
+		slide_id = self.slide_data['file_name'][idx]
 		label = self.slide_data['label'][idx]
 		if type(self.data_dir) == dict:
 			source = self.slide_data['source'][idx]
